@@ -18,6 +18,7 @@ class IntegerLiteral;
 class CharacterLiteral;
 class BinaryOperator;
 class UnaryOperator;
+class UnaryExprOrTypeTraitExpr;
 class DeclStmt;
 class DeclRefExpr;
 class CastExpr;
@@ -62,6 +63,7 @@ public:
 
   void bindStmt(Stmt *stmt, Object *val) { mDeclRefExprs[stmt] = val; }
   void bindStmt(Stmt *stmt, MappedValue val) { mExprs[stmt] = std::move(val); }
+  
   Object *getStmtVal(Stmt *stmt) const {
     auto res1 = mExprs.find(stmt);
     if (res1 == mExprs.end()) {
@@ -84,17 +86,6 @@ public:
   std::unique_ptr<Object> MoveRetReg() { return std::move(retReg); }
 };
 
-/// Heap maps address to a value
-/*
-class Heap {
-public:
-   int Malloc(int size) ;
-   void Free (int addr) ;
-   void Update(int addr, int val) ;
-   int get(int addr);
-};
-*/
-
 class Environment {
   std::vector<StackFrame> mStack;
 
@@ -104,6 +95,8 @@ class Environment {
   FunctionDecl *mOutput;
 
   FunctionDecl *mEntry;
+
+  std::map<long, std::unique_ptr<Array>> mHeap;
 
   bool mNextCompoundStmtAddScope;
   InterpreterVisitor *mVisitor;
@@ -125,14 +118,15 @@ public:
   /// !TODO Support comparison operation
   void binop(BinaryOperator *bop);
   void unary(UnaryOperator *uop);
+  void unaryOrTypeTrait(UnaryExprOrTypeTraitExpr *expr);
 
   void decl(DeclStmt *declstmt);
   void declref(DeclRefExpr *declref);
   void paren(ParenExpr *paren);
-  void cast(CastExpr *castexpr);
   /// !TODO Support Function Call
   void call(CallExpr *callexpr);
   void implicitCast(ImplicitCastExpr *expr);
+  void cast(CastExpr *expr);
   void arraySubscript(ArraySubscriptExpr *arrSubExpr);
 
   void compoundStmtBegin(CompoundStmt *stmt);

@@ -13,12 +13,13 @@ public:
   void VisitCharacterLiteral(CharacterLiteral *lit);
   void VisitBinaryOperator(BinaryOperator *bop);
   void VisitUnaryOperator(UnaryOperator *uop);
+  void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *expr);
   void VisitDeclRefExpr(DeclRefExpr *expr);
-  void VisitCastExpr(CastExpr *expr);
   void VisitArraySubscriptExpr(ArraySubscriptExpr *expr);
   void VisitParenExpr(ParenExpr *expr);
   void VisitCallExpr(CallExpr *call);
   void VisitImplicitCastExpr(ImplicitCastExpr *expr);
+  void VisitCastExpr(CastExpr *expr);
   void VisitIfStmt(IfStmt *stmt);
   void VisitWhileStmt(WhileStmt *stmt);
   void VisitForStmt(ForStmt *stmt);

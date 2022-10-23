@@ -27,6 +27,9 @@ public:
 
   std::unique_ptr<LValueReference> operator[](Object &r) const;
 
+  std::unique_ptr<LValueReference> DerefObj();
+  std::unique_ptr<Object> *GetPtrObj();
+
 protected:
   Object() = default;
 };
@@ -78,11 +81,11 @@ static_assert(sizeof(Value) == 16, "");
 
 class LValueReference final : public IValue {
 public:
-  Object *ref;
+  std::unique_ptr<Object> *ref;
 
-  explicit LValueReference(Object *ref) : ref(ref) {}
+  explicit LValueReference(std::unique_ptr<Object> *ref) : ref(ref) {}
 
-  long GetValue() const final { return ref->GetValueObj(); }
+  long GetValue() const final { return (*ref)->GetValueObj(); }
   void Assign(RValue &r) final;
 
   std::unique_ptr<Additive> operator+(Additive &r) const final;
@@ -90,6 +93,9 @@ public:
   std::unique_ptr<IValue> operator-() const final;
   std::unique_ptr<IValue> operator*(IValue &r) const final;
   std::unique_ptr<IValue> operator/(IValue &r) const final;
+
+  std::unique_ptr<Object> *GetPtr() const { return (*ref)->GetPtrObj(); }
+  std::unique_ptr<LValueReference> Deref() { return (*ref)->DerefObj(); }
 };
 
 class Function final : public Object {
@@ -116,24 +122,34 @@ public:
 
   virtual std::unique_ptr<Additive> operator+(Additive &r) const final;
   virtual std::unique_ptr<Additive> operator-(Additive &r) const final;
-  virtual long GetValue() const final {
-    return reinterpret_cast<long>(base->get());
-  }
+  virtual long GetValue() const final { return reinterpret_cast<long>(base); }
 
   std::unique_ptr<LValueReference> operator[](Assignable &v);
+
+  virtual std::unique_ptr<Object> *GetPtr() const final { return base; }
+
+  std::unique_ptr<LValueReference> Deref() {
+    return std::make_unique<LValueReference>(this->GetPtr());
+  }
 };
 
 class Pointer final : public Assignable {
 public:
-  Object *base;
+  std::unique_ptr<Object> *base;
 
-  explicit Pointer(Object *base) : base(base) {}
+  explicit Pointer(std::unique_ptr<Object> *base) : base(base) {}
   ~Pointer() {}
 
   virtual std::unique_ptr<Additive> operator+(Additive &r) const final;
   virtual std::unique_ptr<Additive> operator-(Additive &r) const final;
 
-  virtual long GetValue() const final { return reinterpret_cast<long>(base); }
+  virtual long GetValue() const final;
 
   virtual void Assign(RValue &r) final;
+
+  std::unique_ptr<Object> *GetPtr() const { return base; }
+
+  std::unique_ptr<LValueReference> Deref() {
+    return std::make_unique<LValueReference>(this->GetPtr());
+  }
 };

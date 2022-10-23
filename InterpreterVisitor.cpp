@@ -16,18 +16,24 @@ void InterpreterVisitor::VisitUnaryOperator(UnaryOperator *uop) {
   VisitStmt(uop);
   mEnv->unary(uop);
 }
+void InterpreterVisitor::VisitUnaryExprOrTypeTraitExpr(
+    UnaryExprOrTypeTraitExpr *expr) {
+  VisitStmt(expr);
+  mEnv->unaryOrTypeTrait(expr);
+}
 void InterpreterVisitor::VisitDeclRefExpr(DeclRefExpr *expr) {
   VisitStmt(expr);
   mEnv->declref(expr);
-}
-void InterpreterVisitor::VisitCastExpr(CastExpr *expr) {
-  VisitStmt(expr);
-  mEnv->cast(expr);
 }
 
 void InterpreterVisitor::VisitImplicitCastExpr(ImplicitCastExpr *expr) {
   VisitStmt(expr);
   mEnv->implicitCast(expr);
+}
+
+void InterpreterVisitor::VisitCastExpr(CastExpr *expr) {
+  VisitStmt(expr);
+  mEnv->cast(expr);
 }
 
 void InterpreterVisitor::VisitArraySubscriptExpr(ArraySubscriptExpr *expr) {
