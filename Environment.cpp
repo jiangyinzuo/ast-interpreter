@@ -73,7 +73,7 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
     } else if (VarDecl *vardecl = dyn_cast<VarDecl>(*i)) {
       Expr *init_expr = vardecl->getInit();
       auto tp = vardecl->getType();
-      if (tp->isIntegerType() || tp->isCharType()) {
+      if (tp->isIntegerType() || tp->isCharType() || tp->isPointerType()) {
         std::string varname = vardecl->getNameAsString();
         if (init_expr == nullptr) {
           mStack.back().bindDecl(vardecl, std::make_unique<Value>(0L));
@@ -179,7 +179,7 @@ void Environment::binop(BinaryOperator *bop) {
 }
 
 void Environment::unary(UnaryOperator *uop) {
-  auto value = mStack.back().getStmtVal(uop);
+  auto value = mStack.back().getStmtVal(uop->getSubExpr());
   switch (uop->getOpcode()) {
   case clang::UO_Plus: {
     mStack.back().bindStmt(uop, value);
@@ -211,7 +211,7 @@ void Environment::decl(DeclStmt *declstmt) {
       if (varDeclType->isConstantArrayType() &&
           varDeclType->isConstantSizeType()) {
         arrayType(vardecl, init_expr, varDeclType);
-      } else if (varDeclType->isIntegerType() || varDeclType->isCharType()) {
+      } else if (varDeclType->isIntegerType() || varDeclType->isCharType() || varDeclType->isPointerType()) {
         if (init_expr == nullptr) {
           mStack.back().bindDecl(vardecl, std::make_unique<Value>(0L));
         } else {
@@ -220,7 +220,13 @@ void Environment::decl(DeclStmt *declstmt) {
           v->AssignObj(*init_value);
           mStack.back().bindDecl(vardecl, std::move(v));
         }
+      } else {
+        llvm::errs() << "unimplemented vardecl \n";
+        exit(-1);
       }
+    } else {
+      llvm::errs() << "not vardecl\n";
+      exit(-1);
     }
   }
 }

@@ -12,7 +12,7 @@ template <class Ptr> Ptr *ToPtr(Object *obj) {
 }
 
 void Object::AssignObj(Object &r) {
-  ToPtr<Assignable>(const_cast<Object *>(this))->Assign(*ToPtr<Assignable>(&r));
+  ToPtr<Assignable>(const_cast<Object *>(this))->Assign(*ToPtr<RValue>(&r));
 }
 
 long Object::GetValueObj() {
@@ -87,7 +87,7 @@ std::unique_ptr<IValue> Value::operator/(IValue &r) const {
   exit(-1);
 }
 
-void LValueReference::Assign(Assignable &r) {
+void LValueReference::Assign(RValue &r) {
   ToPtr<Assignable>(ref)->Assign(r);
 }
 
@@ -151,6 +151,6 @@ std::unique_ptr<Additive> Pointer::operator-(Additive &r) const {
   exit(-1);
 }
 
-void Pointer::Assign(Assignable &r) {
+void Pointer::Assign(RValue &r) {
   base = reinterpret_cast<Object *>(r.GetValue());
 }
