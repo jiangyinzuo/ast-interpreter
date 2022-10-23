@@ -1,0 +1,1 @@
+extern void PRINT(int); int main() {PRINT(1);PRINT('A');}
