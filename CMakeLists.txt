@@ -5,12 +5,16 @@ find_package(Clang REQUIRED CONFIG HINTS ${LLVM_DIR} ${LLVM_DIR}/lib/cmake/clang
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-include_directories(${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS} SYSTEM)
-link_directories(${LLVM_LIBRARY_DIRS})
-
 file(GLOB SOURCE "./*.cpp")
+add_library(ast-interpreter-lib ${SOURCE})
+target_link_libraries(ast-interpreter-lib ${LLVM_LIBRARY_DIRS})
+target_include_directories(ast-interpreter-lib PUBLIC ${LLVM_INCLUDE_DIRS})
+# include_directories(${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS} SYSTEM)
+# link_directories(${LLVM_LIBRARY_DIRS})
 
-add_executable(ast-interpreter ${SOURCE})
+target_include_directories(ast-interpreter-lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
+add_executable(ast-interpreter cmd/ASTInterpreter.cpp)
+target_include_directories(ast-interpreter PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 set( LLVM_LINK_COMPONENTS
   ${LLVM_TARGETS_TO_BUILD}
@@ -19,12 +23,17 @@ set( LLVM_LINK_COMPONENTS
   )
 
 
-target_link_libraries(ast-interpreter
+target_link_libraries(ast-interpreter-lib
   clangAST
   clangBasic
   clangFrontend
   clangTooling
   )
+target_link_libraries(ast-interpreter ast-interpreter-lib)
 
 install(TARGETS ast-interpreter
   RUNTIME DESTINATION bin)
+
+if (${CMAKE_BUILD_TYPE} MATCHES "Debug")
+  add_subdirectory(unittest)
+endif()

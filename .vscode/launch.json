@@ -9,9 +9,9 @@
 			"type": "cppdbg",
 			"request": "launch",
 			"program": "${workspaceFolder}/build/ast-interpreter",
-			"args": ["$(cat test/test18.c)"],
+			"args": ["$(cat test/mytest/test09.c)"],
 			"stopAtEntry": false,
-			"cwd": "${fileDirname}",
+			"cwd": "${workspaceFolder}",
 			"environment": [],
 			"externalConsole": false,
 			"MIMode": "gdb"

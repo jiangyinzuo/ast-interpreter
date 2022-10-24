@@ -1,6 +1,6 @@
 #include "Environment.h"
 #include "InterpreterVisitor.h"
-#include "Object.h"
+#include "ObjectV2.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/EvaluatedExprVisitor.h"
@@ -12,31 +12,23 @@
 #include <memory>
 #include <vector>
 
-static std::string getDeclName(Decl *decl) {
-  std::string name;
-  if (VarDecl *vardecl = dyn_cast<VarDecl>(decl)) {
-    name = vardecl->getName().str();
-  } else if (FunctionDecl *fdecl = dyn_cast<FunctionDecl>(fdecl)) {
-    name = fdecl->getName().str();
-  } else {
-    llvm::errs() << "unimplemented getDeclName: " << decl->getDeclKindName()
-                 << '\n';
-    exit(-1);
+static unsigned getPointerType(QualType ty) {
+  unsigned pointerType = 0;
+  while (const PointerType *pt = dyn_cast<PointerType>(ty.getTypePtr())) {
+    ty = pt->getPointeeType();
+    ++pointerType;
   }
-  return name;
+  return pointerType;
 }
 
-void StackFrame::bindDecl(Decl *decl, MappedValue val) {
-  assert(val != nullptr);
-  mVars[decl] = std::move(val);
-}
+void StackFrame::bindDecl(Decl *decl, ObjectV2 val) { mVars[decl] = (val); }
 
-Object *StackFrame::getDeclVal(std::vector<StackFrame> &stack, Decl *name) {
+ObjectV2 StackFrame::getDeclValRef(std::vector<StackFrame> &stack, Decl *name) {
   auto *curFrame = this;
   for (;;) {
     auto result = curFrame->mVars.find(name);
     if (result != curFrame->mVars.end()) {
-      return result->second.get();
+      return result->second.LValueRef();
     }
     if (curFrame->mFatherID == kNoFather) {
       llvm::errs() << "no decl";
@@ -52,7 +44,7 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
   StackFrame mainStackFrame(0);
   for (auto i = unit->decls_begin(), e = unit->decls_end(); i != e; ++i) {
     if (FunctionDecl *fdecl = dyn_cast<FunctionDecl>(*i)) {
-      mStack.back().bindDecl(fdecl, std::make_unique<Function>(fdecl));
+      mStack.back().bindDecl(fdecl, ObjectV2(0, 0, (long)fdecl));
       if (fdecl->getName().equals("FREE"))
         mFree = fdecl;
       else if (fdecl->getName().equals("MALLOC"))
@@ -65,34 +57,36 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
         mEntry = fdecl;
         // bind main's parameters
         for (auto *it = fdecl->param_begin(); it != fdecl->param_end(); ++it) {
+          unsigned pointerType = getPointerType((*it)->getType());
           mainStackFrame.bindDecl(
-              *it, std::make_unique<Value>(0L)); // TODO: decl value
+              *it, ObjectV2(pointerType, 0, 0L)); // TODO: decl value
         }
       } else {
         // user defined function
       }
     } else if (VarDecl *vardecl = dyn_cast<VarDecl>(*i)) {
       Expr *init_expr = vardecl->getInit();
-      auto tp = vardecl->getType();
+      QualType tp = vardecl->getType();
       if (tp->isIntegerType() || tp->isCharType()) {
         if (init_expr == nullptr) {
-          mStack.back().bindDecl(vardecl, std::make_unique<Value>(0L));
+          mStack.back().bindDecl(vardecl, ObjectV2(0, 0, 0L));
         } else if (IntegerLiteral *int_lit =
                        dyn_cast<IntegerLiteral>(init_expr)) {
-          mStack.back().bindDecl(vardecl,
-                                 std::make_unique<Value>(
-                                     (long)int_lit->getValue().getSExtValue()));
+          mStack.back().bindDecl(
+              vardecl,
+              ObjectV2(0, 0, (long)int_lit->getValue().getSExtValue()));
         } else if (CharacterLiteral *char_lit =
                        dyn_cast<CharacterLiteral>(init_expr)) {
           mStack.back().bindDecl(
-              vardecl, std::make_unique<Value>(
-                           static_cast<long>((char_lit->getValue()))));
+              vardecl,
+              ObjectV2(0, 0, static_cast<long>((char_lit->getValue()))));
         } else {
           llvm::errs() << "unimplement literal: "
                        << init_expr->getStmtClassName();
         }
       } else if (tp->isPointerType()) {
         // TODO: init
+
       } else if (tp->isConstantArrayType() && tp->isConstantSizeType()) {
         arrayType(vardecl, init_expr, tp);
       }
@@ -108,49 +102,58 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
 
 void Environment::intLiteral(IntegerLiteral *int_lit) {
   mStack.back().setPC(int_lit);
-  mStack.back().bindStmt(int_lit, std::make_unique<Value>(static_cast<long>(
-                                      int_lit->getValue().getSExtValue())));
+  mStack.back().bindStmt(
+      int_lit,
+      ObjectV2(0, 0, static_cast<long>(int_lit->getValue().getSExtValue())));
 }
 
 void Environment::charLiteral(CharacterLiteral *char_lit) {
   mStack.back().setPC(char_lit);
-  mStack.back().bindStmt(char_lit, std::make_unique<Value>(static_cast<long>(
-                                       char_lit->getValue())));
+  mStack.back().bindStmt(
+      char_lit, ObjectV2(0, 0, static_cast<long>(char_lit->getValue())));
 }
 
 void Environment::binop(BinaryOperator *bop) {
   Expr *left = bop->getLHS();
   Expr *right = bop->getRHS();
+  auto left_value = mStack.back().getStmtVal(left);
+  auto right_value = mStack.back().getStmtVal(right);
   switch (bop->getOpcode()) {
   case clang::BO_Assign: {
-    auto rvalue = mStack.back().getStmtVal(right);
-    auto lvalue = mStack.back().getStmtVal(left);
-    lvalue->AssignObj(*rvalue);
-    mStack.back().bindStmt(left, rvalue);
+    left_value.Assign(right_value);
+    mStack.back().bindStmt(left, right_value);
     break;
   }
   case clang::BO_Add: {
-    auto left_value = mStack.back().getStmtVal(left);
-    auto right_value = mStack.back().getStmtVal(right);
-    mStack.back().bindStmt(bop, *left_value + *right_value);
+    mStack.back().bindStmt(bop, left_value.Add(right_value));
     break;
   }
   case clang::BO_Sub: {
-    auto left_value = mStack.back().getStmtVal(left);
-    auto right_value = mStack.back().getStmtVal(right);
-    mStack.back().bindStmt(bop, *left_value - *right_value);
+    mStack.back().bindStmt(bop, left_value.Sub(right_value));
     break;
   }
   case clang::BO_Mul: {
-    auto left_value = mStack.back().getStmtVal(left);
-    auto right_value = mStack.back().getStmtVal(right);
-    mStack.back().bindStmt(bop, *left_value * *right_value);
+    mStack.back().bindStmt(bop, left_value.Mul(right_value));
     break;
   }
   case clang::BO_Div: {
-    auto left_value = mStack.back().getStmtVal(left);
-    auto right_value = mStack.back().getStmtVal(right);
-    mStack.back().bindStmt(bop, *left_value / *right_value);
+    mStack.back().bindStmt(bop, left_value.Div(right_value));
+    break;
+  }
+  case clang::BO_GE: {
+    mStack.back().bindStmt(bop, left_value.Ge(right_value));
+    break;
+  }
+  case clang::BO_GT: {
+    mStack.back().bindStmt(bop, left_value.Gt(right_value));
+    break;
+  }
+  case clang::BO_LE: {
+    mStack.back().bindStmt(bop, left_value.Le(right_value));
+    break;
+  }
+  case clang::BO_LT: {
+    mStack.back().bindStmt(bop, left_value.Lt(right_value));
     break;
   }
   default: {
@@ -169,11 +172,11 @@ void Environment::unary(UnaryOperator *uop) {
     break;
   }
   case clang::UO_Minus: {
-    mStack.back().bindStmt(uop, -*value);
+    mStack.back().bindStmt(uop, value.Minus());
     break;
   }
   case clang::UO_Deref: {
-    mStack.back().bindStmt(uop, value->DerefObj());
+    mStack.back().bindStmt(uop, value.Deref());
     break;
   }
   default: {
@@ -188,9 +191,9 @@ void Environment::unaryOrTypeTrait(UnaryExprOrTypeTraitExpr *expr) {
   auto ty = expr->getTypeOfArgument();
   // TODO: modify the hacked code
   if (ty->isIntegerType()) {
-    mStack.back().bindStmt(expr, std::make_unique<Value>(4L));
+    mStack.back().bindStmt(expr, ObjectV2(0, 0, 4L));
   } else if (ty->isPointerType()) {
-    mStack.back().bindStmt(expr, std::make_unique<Value>(8L));
+    mStack.back().bindStmt(expr, ObjectV2(0, 0, 8L));
   } else {
     llvm::errs() << "unimplemented unaryOrTypeTrait"
                  << "\n";
@@ -211,20 +214,21 @@ void Environment::decl(DeclStmt *declstmt) {
         arrayType(vardecl, init_expr, varDeclType);
       } else if (varDeclType->isIntegerType() || varDeclType->isCharType()) {
         if (init_expr == nullptr) {
-          mStack.back().bindDecl(vardecl, std::make_unique<Value>(0L));
+          mStack.back().bindDecl(vardecl, ObjectV2(0, 0, 0L));
         } else {
           auto init_value = mStack.back().getStmtVal(init_expr);
-          std::unique_ptr<Value> v = std::make_unique<Value>(0L);
-          v->AssignObj(*init_value);
+          ObjectV2 v(0, 0, 0L);
+          v.Assign(init_value);
           mStack.back().bindDecl(vardecl, std::move(v));
         }
       } else if (varDeclType->isPointerType()) {
+        unsigned pointerType = getPointerType(varDeclType);
         if (init_expr == nullptr) {
-          mStack.back().bindDecl(vardecl, std::make_unique<Pointer>(nullptr));
+          mStack.back().bindDecl(vardecl, ObjectV2(pointerType, 0, 0L));
         } else {
           auto init_value = mStack.back().getStmtVal(init_expr);
-          std::unique_ptr<Pointer> v = std::make_unique<Pointer>(nullptr);
-          v->AssignObj(*init_value);
+          ObjectV2 v(pointerType, 0, 0L);
+          v.Assign(init_value);
           mStack.back().bindDecl(vardecl, std::move(v));
         }
       } else {
@@ -246,7 +250,7 @@ void Environment::declref(DeclRefExpr *declref) {
       declrefType->isPointerType()) {
     llvm::dbgs() << declref->getDecl()->getDeclName().getAsString() << '\n';
     Decl *decl = declref->getFoundDecl();
-    auto val = mStack.back().getDeclVal(mStack, decl);
+    auto val = mStack.back().getDeclValRef(mStack, decl);
     mStack.back().bindStmt(declref, val);
   } else {
     llvm::errs() << "unimplement declref type. name: "
@@ -270,22 +274,23 @@ void Environment::call(CallExpr *callexpr) {
     llvm::errs() << "Please Input an Integer Value : ";
     scanf("%ld", &val);
 
-    mStack.back().bindStmt(callexpr, std::make_unique<Value>(val));
+    mStack.back().bindStmt(callexpr, ObjectV2(0, 0, val));
   } else if (callee == mOutput) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
-    llvm::errs() << val->GetValueObj();
+    llvm::errs() << val.RValue();
   } else if (callee == mMalloc) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
-    auto arr = std::make_unique<Array>(val->GetValueObj());
-    auto ptr = std::make_unique<Pointer>(arr->GetPtr());
-    mHeap[ptr->GetValue()] = std::move(arr);
-    mStack.back().bindStmt(callexpr, std::move(ptr));
+    long n = val.RValue();
+    long *ptr = new long[n];
+    ObjectV2 arr(1, 0, (long)ptr);
+    mHeap.insert(ptr);
+    mStack.back().bindStmt(callexpr, arr);
   } else if (callee == mFree) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
-    int res = mHeap.erase(val->GetValueObj());
+    int res = mHeap.erase((long *)val.RValue());
     assert(res == 1);
   } else {
     //  call user-defined function
@@ -302,8 +307,9 @@ void Environment::call(CallExpr *callexpr) {
          arg != callexpr->arg_end() && param != callee->param_end();
          ++arg, ++param) {
       auto val = mStack.back().getStmtVal(*arg);
-      std::unique_ptr<Value> v = std::make_unique<Value>(0L);
-      v->AssignObj(*val);
+      unsigned pointerType = getPointerType((*arg)->getType());
+      ObjectV2 v(pointerType, 0, 0L);
+      v.Assign(val);
       stack_frame.bindDecl(*param, std::move(v));
     }
     mStack.push_back(std::move(stack_frame));
@@ -317,12 +323,16 @@ void Environment::call(CallExpr *callexpr) {
 }
 
 void Environment::implicitCast(ImplicitCastExpr *expr) {
+  unsigned pointerType = getPointerType(expr->getType());
   auto obj = mStack.back().getStmtVal(expr->getSubExpr());
+  obj.CastTo(pointerType);
   mStack.back().bindStmt(expr, obj);
 }
 
 void Environment::cast(CastExpr *expr) {
+  unsigned pointerType = getPointerType(expr->getType());
   auto obj = mStack.back().getStmtVal(expr->getSubExpr());
+  obj.CastTo(pointerType);
   mStack.back().bindStmt(expr, obj);
 }
 
@@ -330,7 +340,7 @@ void Environment::arraySubscript(ArraySubscriptExpr *arrSubExpr) {
   auto idx = mStack.back().getStmtVal(arrSubExpr->getIdx());
   Expr *baseExpr = arrSubExpr->getBase();
   auto arr = mStack.back().getStmtVal(baseExpr);
-  mStack.back().bindStmt(arrSubExpr, (*arr)[*idx]);
+  mStack.back().bindStmt(arrSubExpr, arr.Subscript(idx));
 }
 
 void Environment::compoundStmtBegin(CompoundStmt *stmt) {
@@ -344,17 +354,20 @@ void Environment::compoundStmtEnd() { mStack.pop_back(); }
 void Environment::returnStmt(ReturnStmt *stmt) {
   Expr *e = stmt->getRetValue();
   if (e != nullptr) {
-    std::unique_ptr<Object> ret = mStack.back().MoveStmtVal(e);
-    mStack.back().setRetReg(std::move(ret));
+    auto ret = mStack.back().getStmtVal(e);
+    mStack.back().setRetReg(ret);
   }
 }
 
 void Environment::arrayType(VarDecl *vardecl, Expr *init_expr,
                             clang::QualType tp) {
   auto array_tp = dyn_cast<ConstantArrayType>(tp);
+  unsigned pointerType = getPointerType(array_tp->getElementType());
   if (init_expr == nullptr) {
-    mStack.back().bindDecl(
-        vardecl, std::make_unique<Array>(array_tp->getSize().getZExtValue()));
+    size_t size = array_tp->getSize().getZExtValue();
+    long *ptr = new long[size];
+    mStack.back().bindDecl(vardecl, ObjectV2(pointerType, 0, (long)ptr));
+    mStack.back().mArrs.insert(ptr);
   } else {
     llvm::errs() << "unimplement array initialization.\n";
     exit(-1);
