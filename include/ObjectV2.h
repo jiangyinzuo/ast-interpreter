@@ -38,6 +38,9 @@ public:
   ObjectV2 Ge(const ObjectV2 &obj) const;
   ObjectV2 Lt(const ObjectV2 &obj) const;
   ObjectV2 Le(const ObjectV2 &obj) const;
+  ObjectV2 ToRValue() const {
+    return ObjectV2(pointerType, 0, RValue());
+  }
   
   // Return LValue
   ObjectV2 Deref() const;

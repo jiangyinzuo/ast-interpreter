@@ -6,7 +6,6 @@
 #include <cassert>
 #include <cstdio>
 #include <map>
-#include <memory>
 #include <unordered_set>
 #include <vector>
 
@@ -77,8 +76,8 @@ public:
 
   void setPC(Stmt *stmt) { mPC = stmt; }
   Stmt *getPC() const { return mPC; }
-  void setRetReg(ObjectV2 obj) { retReg = (obj); }
-  ObjectV2 MoveRetReg() { return (retReg); }
+  void setRetReg(ObjectV2 obj) { retReg = obj; }
+  ObjectV2 MoveRetReg() const { return retReg.ToRValue(); }
 };
 
 class Environment {
@@ -93,24 +92,25 @@ class Environment {
 
   std::unordered_set<long *> mHeap;
 
-  bool mNextCompoundStmtAddScope;
   InterpreterVisitor *mVisitor;
 
 public:
+  bool mReturned;
+
   /// Get the declartions to the built-in functions
   Environment()
       : mStack(), mFree(NULL), mMalloc(NULL), mInput(NULL), mOutput(NULL),
-        mEntry(NULL), mNextCompoundStmtAddScope(true) {}
+        mEntry(NULL), mReturned(false) {}
 
   /// Initialize the Environment
   void init(TranslationUnitDecl *unit, InterpreterVisitor *mVisitor);
 
   FunctionDecl *getEntry() { return mEntry; }
 
+  void evalStmt(Stmt *stmt);
   void intLiteral(IntegerLiteral *int_lit);
   void charLiteral(CharacterLiteral *char_lit);
 
-  /// !TODO Support comparison operation
   void binop(BinaryOperator *bop);
   void unary(UnaryOperator *uop);
   void unaryOrTypeTrait(UnaryExprOrTypeTraitExpr *expr);
@@ -118,7 +118,6 @@ public:
   void decl(DeclStmt *declstmt);
   void declref(DeclRefExpr *declref);
   void paren(ParenExpr *paren);
-  /// !TODO Support Function Call
   void call(CallExpr *callexpr);
   void implicitCast(ImplicitCastExpr *expr);
   void cast(CastExpr *expr);
@@ -135,5 +134,14 @@ public:
     assert(mStack.size() == 2);
     auto ret = mStack.back().MoveRetReg();
     return ret.RValue();
+  }
+
+  long getPCValue() const {
+    auto *pc = mStack.back().getPC();
+    ObjectV2 obj = mStack.back().getStmtVal(pc);
+    return obj.RValue();
+  }
+  void AddScopeBeforeCompoundStmt() {
+    mStack.push_back(std::move(StackFrame(mStack.size() - 1)));
   }
 };

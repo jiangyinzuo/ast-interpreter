@@ -100,6 +100,40 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
   mStack.push_back(std::move(mainStackFrame));
 }
 
+void Environment::evalStmt(Stmt *stmt) {
+  if (auto e = dyn_cast<IntegerLiteral>(stmt)) {
+    intLiteral(e);
+  } else if (auto e = dyn_cast<CharacterLiteral>(stmt)) {
+    charLiteral(e);
+  } else if (auto e = dyn_cast<BinaryOperator>(stmt)) {
+    binop(e);
+  } else if (auto e = dyn_cast<UnaryOperator>(stmt)) {
+    unary(e);
+  } else if (auto e = dyn_cast<UnaryExprOrTypeTraitExpr>(stmt)) {
+    unaryOrTypeTrait(e);
+  } else if (auto e = dyn_cast<DeclStmt>(stmt)) {
+    decl(e);
+  } else if (auto e = dyn_cast<DeclRefExpr>(stmt)) {
+    declref(e);
+  } else if (auto e = dyn_cast<ParenExpr>(stmt)) {
+    paren(e);
+  } else if (auto e = dyn_cast<CallExpr>(stmt)) {
+    call(e);
+  } else if (auto e = dyn_cast<ImplicitCastExpr>(stmt)) {
+    implicitCast(e);
+  } else if (auto e = dyn_cast<CastExpr>(stmt)) {
+    cast(e);
+  } else if (auto e = dyn_cast<ArraySubscriptExpr>(stmt)) {
+    arraySubscript(e);
+  } else if (auto e = dyn_cast<CompoundStmt>(stmt)) {
+    llvm::errs() << "can not eval CompoundStmt\n";
+    exit(-1);
+  } else if (auto e = dyn_cast<ReturnStmt>(stmt)) {
+    llvm::errs() << "can not eval ReturnStmt\n";
+    exit(-1);
+  }
+}
+
 void Environment::intLiteral(IntegerLiteral *int_lit) {
   mStack.back().setPC(int_lit);
   mStack.back().bindStmt(
@@ -114,6 +148,8 @@ void Environment::charLiteral(CharacterLiteral *char_lit) {
 }
 
 void Environment::binop(BinaryOperator *bop) {
+  llvm::dbgs() << "bop: " << bop->getOpcodeStr() << '\n';
+  mStack.back().setPC(bop);
   Expr *left = bop->getLHS();
   Expr *right = bop->getRHS();
   auto left_value = mStack.back().getStmtVal(left);
@@ -165,6 +201,7 @@ void Environment::binop(BinaryOperator *bop) {
 }
 
 void Environment::unary(UnaryOperator *uop) {
+  mStack.back().setPC(uop);
   auto value = mStack.back().getStmtVal(uop->getSubExpr());
   switch (uop->getOpcode()) {
   case clang::UO_Plus: {
@@ -188,6 +225,7 @@ void Environment::unary(UnaryOperator *uop) {
 }
 
 void Environment::unaryOrTypeTrait(UnaryExprOrTypeTraitExpr *expr) {
+  mStack.back().setPC(expr);
   auto ty = expr->getTypeOfArgument();
   // TODO: modify the hacked code
   if (ty->isIntegerType()) {
@@ -202,6 +240,7 @@ void Environment::unaryOrTypeTrait(UnaryExprOrTypeTraitExpr *expr) {
 }
 
 void Environment::decl(DeclStmt *declstmt) {
+  mStack.back().setPC(declstmt);
   for (DeclStmt::decl_iterator it = declstmt->decl_begin(),
                                ie = declstmt->decl_end();
        it != ie; ++it) {
@@ -261,11 +300,11 @@ void Environment::declref(DeclRefExpr *declref) {
 }
 
 void Environment::paren(ParenExpr *expr) {
+  mStack.back().setPC(expr);
   auto obj = mStack.back().getStmtVal(expr->getSubExpr());
   mStack.back().bindStmt(expr, obj);
 }
 
-/// !TODO Support Function Call
 void Environment::call(CallExpr *callexpr) {
   mStack.back().setPC(callexpr);
   FunctionDecl *callee = callexpr->getDirectCallee();
@@ -314,15 +353,16 @@ void Environment::call(CallExpr *callexpr) {
     }
     mStack.push_back(std::move(stack_frame));
     mVisitor->VisitStmt(callee->getBody());
-
+    mReturned = false;
     // resume PC
     auto ret = mStack.back().MoveRetReg();
     mStack.pop_back();
-    mStack.back().bindStmt(callexpr, std::move(ret));
+    mStack.back().bindStmt(callexpr, ret);
   }
 }
 
 void Environment::implicitCast(ImplicitCastExpr *expr) {
+  mStack.back().setPC(expr);
   unsigned pointerType = getPointerType(expr->getType());
   auto obj = mStack.back().getStmtVal(expr->getSubExpr());
   obj.CastTo(pointerType);
@@ -330,6 +370,7 @@ void Environment::implicitCast(ImplicitCastExpr *expr) {
 }
 
 void Environment::cast(CastExpr *expr) {
+  mStack.back().setPC(expr);
   unsigned pointerType = getPointerType(expr->getType());
   auto obj = mStack.back().getStmtVal(expr->getSubExpr());
   obj.CastTo(pointerType);
@@ -337,6 +378,7 @@ void Environment::cast(CastExpr *expr) {
 }
 
 void Environment::arraySubscript(ArraySubscriptExpr *arrSubExpr) {
+  mStack.back().setPC(arrSubExpr);
   auto idx = mStack.back().getStmtVal(arrSubExpr->getIdx());
   Expr *baseExpr = arrSubExpr->getBase();
   auto arr = mStack.back().getStmtVal(baseExpr);
@@ -345,18 +387,19 @@ void Environment::arraySubscript(ArraySubscriptExpr *arrSubExpr) {
 
 void Environment::compoundStmtBegin(CompoundStmt *stmt) {
   mStack.back().setPC(stmt);
-  if (mNextCompoundStmtAddScope) {
-    mStack.push_back(std::move(StackFrame(mStack.size() - 1)));
-  }
+  mStack.push_back(std::move(StackFrame(mStack.size() - 1)));
 }
+
 void Environment::compoundStmtEnd() { mStack.pop_back(); }
 
 void Environment::returnStmt(ReturnStmt *stmt) {
+  mStack.back().setPC(stmt);
   Expr *e = stmt->getRetValue();
   if (e != nullptr) {
     auto ret = mStack.back().getStmtVal(e);
     mStack.back().setRetReg(ret);
   }
+  mReturned = true;
 }
 
 void Environment::arrayType(VarDecl *vardecl, Expr *init_expr,
