@@ -1,4 +1,7 @@
 #pragma once
+
+#include <string>
+
 class ObjectV2 {
 private:
   // Type
@@ -10,7 +13,7 @@ private:
   long rawValue;
 
 public:
-	ObjectV2() : pointerType(0), derefCount(0), rawValue(0) {}
+  ObjectV2() : pointerType(0), derefCount(0), rawValue(0) {}
   explicit ObjectV2(unsigned pointerType, int derefCount, long rawValue)
       : derefCount(derefCount), pointerType(pointerType), rawValue(rawValue) {}
 
@@ -24,28 +27,42 @@ public:
     return res;
   }
 
-	void CastTo(unsigned pointerType) {
-		this->pointerType = pointerType;
-	}
+  void CastTo(unsigned pointerType) { this->pointerType = pointerType; }
 
   // Return RValue
   ObjectV2 Add(const ObjectV2 &obj) const;
   ObjectV2 Sub(const ObjectV2 &obj) const;
   ObjectV2 Mul(const ObjectV2 &obj) const;
   ObjectV2 Div(const ObjectV2 &obj) const;
-	ObjectV2 Minus() const;
+  ObjectV2 Minus() const;
   ObjectV2 Gt(const ObjectV2 &obj) const;
   ObjectV2 Ge(const ObjectV2 &obj) const;
   ObjectV2 Lt(const ObjectV2 &obj) const;
   ObjectV2 Le(const ObjectV2 &obj) const;
-  ObjectV2 ToRValue() const {
-    return ObjectV2(pointerType, 0, RValue());
+  ObjectV2 ToRValue() const { return ObjectV2(pointerType, 0, RValue()); }
+
+  bool IsRValue() const {
+    return this->derefCount == 0;
   }
-  
+
   // Return LValue
   ObjectV2 Deref() const;
   ObjectV2 Subscript(const ObjectV2 &obj) const;
-	ObjectV2 LValueRef() const {
-		return ObjectV2{pointerType, derefCount + 1, (long)&rawValue};
-	}
+  ObjectV2 LValueRef() const {
+    return ObjectV2{pointerType, derefCount + 1, (long)&rawValue};
+  }
+
+  std::string ToString() const {
+    std::string res("ObjectV2[pointerType=");
+    res += std::to_string(pointerType);
+    res += ", derefCount=";
+    res += std::to_string(derefCount);
+    res += ", rawvalue=";
+    res += std::to_string(rawValue);
+    res += ", RValue()=";
+    res += std::to_string(RValue());
+    res += "]";
+
+    return res;
+  }
 };

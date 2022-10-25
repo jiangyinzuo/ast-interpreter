@@ -24,10 +24,9 @@ public:
 
     FunctionDecl *entry = mEnv.getEntry();
     mVisitor.VisitStmt(entry->getBody());
-    auto mainRet = mEnv.getMainRet();
-    if (mainRet != 0) {
-      llvm::errs() << "main returns " << mainRet << "\n";
-      exit(-1);
+    auto regRet = mEnv.getMainRet();
+    if (regRet != 0) {
+      llvm::dbgs() << "main returns " << regRet << "\n";
     }
   }
 

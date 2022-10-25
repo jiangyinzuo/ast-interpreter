@@ -10,8 +10,8 @@
 #include "clang/Tooling/Tooling.h"
 #include <cstdlib>
 #include <memory>
-#include <vector>
 
+const int StackFrame::kNoFather = -1;
 static unsigned getPointerType(QualType ty) {
   unsigned pointerType = 0;
   while (const PointerType *pt = dyn_cast<PointerType>(ty.getTypePtr())) {
@@ -21,9 +21,19 @@ static unsigned getPointerType(QualType ty) {
   return pointerType;
 }
 
+StackFrame::~StackFrame() {
+  if (!mArrs.empty()) {
+    llvm::dbgs() << "destroy stack frame's " << mArrs.size() << " arrays\n";
+    for (long *p : mArrs) {
+      delete[] p;
+    }
+    mArrs.clear();
+  }
+}
+
 void StackFrame::bindDecl(Decl *decl, ObjectV2 val) { mVars[decl] = (val); }
 
-ObjectV2 StackFrame::getDeclValRef(std::vector<StackFrame> &stack, Decl *name) {
+ObjectV2 StackFrame::getDeclValRef(std::deque<StackFrame> &stack, Decl *name) {
   auto *curFrame = this;
   for (;;) {
     auto result = curFrame->mVars.find(name);
@@ -40,7 +50,7 @@ ObjectV2 StackFrame::getDeclValRef(std::vector<StackFrame> &stack, Decl *name) {
 
 void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
   mVisitor = visitor;
-  mStack.push_back(std::move(StackFrame(StackFrame::kNoFather)));
+  mStack.emplace_back(StackFrame::kNoFather);
   StackFrame mainStackFrame(0);
   for (auto i = unit->decls_begin(), e = unit->decls_end(); i != e; ++i) {
     if (FunctionDecl *fdecl = dyn_cast<FunctionDecl>(*i)) {
@@ -126,10 +136,12 @@ void Environment::evalStmt(Stmt *stmt) {
   } else if (auto e = dyn_cast<ArraySubscriptExpr>(stmt)) {
     arraySubscript(e);
   } else if (auto e = dyn_cast<CompoundStmt>(stmt)) {
-    llvm::errs() << "can not eval CompoundStmt\n";
-    exit(-1);
+    compoundStmtBegin(e);
+    compoundStmtEnd();
   } else if (auto e = dyn_cast<ReturnStmt>(stmt)) {
-    llvm::errs() << "can not eval ReturnStmt\n";
+    returnStmt(e);
+  } else {
+    llvm::errs() << "unimplemented eval stmt!\n";
     exit(-1);
   }
 }
@@ -256,9 +268,8 @@ void Environment::decl(DeclStmt *declstmt) {
           mStack.back().bindDecl(vardecl, ObjectV2(0, 0, 0L));
         } else {
           auto init_value = mStack.back().getStmtVal(init_expr);
-          ObjectV2 v(0, 0, 0L);
-          v.Assign(init_value);
-          mStack.back().bindDecl(vardecl, std::move(v));
+          ObjectV2 v = init_value.ToRValue();
+          mStack.back().bindDecl(vardecl, v);
         }
       } else if (varDeclType->isPointerType()) {
         unsigned pointerType = getPointerType(varDeclType);
@@ -268,7 +279,7 @@ void Environment::decl(DeclStmt *declstmt) {
           auto init_value = mStack.back().getStmtVal(init_expr);
           ObjectV2 v(pointerType, 0, 0L);
           v.Assign(init_value);
-          mStack.back().bindDecl(vardecl, std::move(v));
+          mStack.back().bindDecl(vardecl, v);
         }
       } else {
         llvm::errs() << "unimplemented vardecl \n";
@@ -329,7 +340,9 @@ void Environment::call(CallExpr *callexpr) {
   } else if (callee == mFree) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
-    int res = mHeap.erase((long *)val.RValue());
+    long *ptr = reinterpret_cast<long *>(val.RValue());
+    delete[] ptr;
+    int res = mHeap.erase(ptr);
     assert(res == 1);
   } else {
     //  call user-defined function
@@ -342,22 +355,27 @@ void Environment::call(CallExpr *callexpr) {
     StackFrame stack_frame(0);
     CallExpr::arg_iterator arg;
     FunctionDecl::param_iterator param;
+    llvm::dbgs() << "param: ";
     for (arg = callexpr->arg_begin(), param = callee->param_begin();
          arg != callexpr->arg_end() && param != callee->param_end();
          ++arg, ++param) {
       auto val = mStack.back().getStmtVal(*arg);
       unsigned pointerType = getPointerType((*arg)->getType());
-      ObjectV2 v(pointerType, 0, 0L);
-      v.Assign(val);
-      stack_frame.bindDecl(*param, std::move(v));
+      ObjectV2 v = val.ToRValue();
+      stack_frame.bindDecl(*param, v);
+      llvm::dbgs() << v.ToString() << ", ";
     }
     mStack.push_back(std::move(stack_frame));
+    llvm::dbgs() << "call begin " << callee->getName() << mStack.size()
+                 << "{\n";
     mVisitor->VisitStmt(callee->getBody());
     mReturned = false;
+    llvm::dbgs() << "call end" << callee->getName() << mStack.size() << "}\n";
     // resume PC
-    auto ret = mStack.back().MoveRetReg();
+    assert(mRetReg.IsRValue());
+    llvm::dbgs() << "ret: " << mRetReg.ToString() << '\n';
     mStack.pop_back();
-    mStack.back().bindStmt(callexpr, ret);
+    mStack.back().bindStmt(callexpr, mRetReg);
   }
 }
 
@@ -387,17 +405,22 @@ void Environment::arraySubscript(ArraySubscriptExpr *arrSubExpr) {
 
 void Environment::compoundStmtBegin(CompoundStmt *stmt) {
   mStack.back().setPC(stmt);
-  mStack.push_back(std::move(StackFrame(mStack.size() - 1)));
+  llvm::dbgs() << "\n{\n";
+  mStack.emplace_back((mStack.size() - 1));
 }
 
-void Environment::compoundStmtEnd() { mStack.pop_back(); }
+void Environment::compoundStmtEnd() {
+  llvm::dbgs() << "\n}\n";
+  mStack.pop_back();
+}
 
 void Environment::returnStmt(ReturnStmt *stmt) {
   mStack.back().setPC(stmt);
+  llvm::dbgs() << "return stmt, ";
   Expr *e = stmt->getRetValue();
   if (e != nullptr) {
-    auto ret = mStack.back().getStmtVal(e);
-    mStack.back().setRetReg(ret);
+    mRetReg = mStack.back().getStmtVal(e).ToRValue();
+    llvm::dbgs() << "ret value: " << mRetReg.ToString() << '\n';
   }
   mReturned = true;
 }
@@ -409,10 +432,16 @@ void Environment::arrayType(VarDecl *vardecl, Expr *init_expr,
   if (init_expr == nullptr) {
     size_t size = array_tp->getSize().getZExtValue();
     long *ptr = new long[size];
-    mStack.back().bindDecl(vardecl, ObjectV2(pointerType, 0, (long)ptr));
+    mStack.back().bindDecl(
+        vardecl, ObjectV2(pointerType, 0, reinterpret_cast<long>(ptr)));
     mStack.back().mArrs.insert(ptr);
   } else {
     llvm::errs() << "unimplement array initialization.\n";
     exit(-1);
   }
+}
+
+void Environment::AddScopeBeforeCompoundStmt() {
+  llvm::dbgs() << "{\n";
+  mStack.emplace_back(mStack.size() - 1);
 }

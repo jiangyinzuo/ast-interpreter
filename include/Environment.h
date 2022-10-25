@@ -5,9 +5,10 @@
 #include "ObjectV2.h"
 #include <cassert>
 #include <cstdio>
+#include <deque>
 #include <map>
 #include <unordered_set>
-#include <vector>
+
 
 namespace clang {
 class Decl;
@@ -38,7 +39,7 @@ using namespace clang;
 
 class StackFrame {
 public:
-  static constexpr int kNoFather = -1;
+  static const int kNoFather;
 
   std::unordered_set<long *> mArrs;
 
@@ -51,20 +52,24 @@ private:
 
   /// The current stmt
   Stmt *mPC;
-  /// return register
-  ObjectV2 retReg;
-  int mFatherID;
+  int mFatherID, mID;
 
 public:
   StackFrame(int fatherID)
-      : mVars(), mFatherID(fatherID), mExprs(), mPC(), retReg(0, 0, 0) {}
-  ~StackFrame() {
-    for (auto v : mArrs) {
-      delete[](long *) v;
-    }
+      : mVars(), mFatherID(fatherID), mExprs(), mPC() {}
+  StackFrame(const StackFrame &) = delete;
+  StackFrame &operator=(const StackFrame &) = delete;
+  StackFrame(StackFrame &&s) {
+    std::swap(mVars, s.mVars);
+    std::swap(mExprs, s.mExprs);
+    std::swap(mPC, s.mPC);
+    std::swap(mFatherID, s.mFatherID);
   }
+  StackFrame &operator=(StackFrame &&) = delete;
+
+  ~StackFrame();
   void bindDecl(Decl *decl, ObjectV2 val);
-  ObjectV2 getDeclValRef(std::vector<StackFrame> &stack, Decl *declname);
+  ObjectV2 getDeclValRef(std::deque<StackFrame> &stack, Decl *declname);
 
   void bindStmt(Stmt *stmt, ObjectV2 val) { mExprs[stmt] = (val); }
 
@@ -76,12 +81,10 @@ public:
 
   void setPC(Stmt *stmt) { mPC = stmt; }
   Stmt *getPC() const { return mPC; }
-  void setRetReg(ObjectV2 obj) { retReg = obj; }
-  ObjectV2 MoveRetReg() const { return retReg.ToRValue(); }
 };
 
 class Environment {
-  std::vector<StackFrame> mStack;
+  std::deque<StackFrame> mStack;
 
   FunctionDecl *mFree; /// Declartions to the built-in functions
   FunctionDecl *mMalloc;
@@ -93,6 +96,8 @@ class Environment {
   std::unordered_set<long *> mHeap;
 
   InterpreterVisitor *mVisitor;
+
+  ObjectV2 mRetReg;
 
 public:
   bool mReturned;
@@ -132,8 +137,8 @@ public:
 
   long getMainRet() {
     assert(mStack.size() == 2);
-    auto ret = mStack.back().MoveRetReg();
-    return ret.RValue();
+    assert(mRetReg.IsRValue());
+    return mRetReg.RValue();
   }
 
   long getPCValue() const {
@@ -141,7 +146,5 @@ public:
     ObjectV2 obj = mStack.back().getStmtVal(pc);
     return obj.RValue();
   }
-  void AddScopeBeforeCompoundStmt() {
-    mStack.push_back(std::move(StackFrame(mStack.size() - 1)));
-  }
+  void AddScopeBeforeCompoundStmt();
 };
