@@ -92,8 +92,7 @@ void InterpreterVisitor::VisitIfStmt(IfStmt *stmt) {
   {
     Stmt *cond = stmt->getCond();
     llvm::dbgs() << "if cond: " << cond->getStmtClassName() << '\n';
-    VisitStmt(cond);
-    mEnv->evalStmt(cond);
+    Visit(cond);
     if (mEnv->mReturned) {
       mEnv->compoundStmtEnd();
       return;
@@ -103,12 +102,10 @@ void InterpreterVisitor::VisitIfStmt(IfStmt *stmt) {
   if (pcValue != 0) {
     Stmt *then = stmt->getThen();
     llvm::dbgs() << "then: " << then->getStmtClassName() << '\n';
-    VisitStmt(then);
-    mEnv->evalStmt(then);
+    Visit(then);
   } else if (Stmt *e = stmt->getElse()) {
     llvm::dbgs() << "else: " << e->getStmtClassName() << '\n';
-    VisitStmt(e);
-    mEnv->evalStmt(e);
+    Visit(e);
   }
   mEnv->compoundStmtEnd();
 }
@@ -122,12 +119,7 @@ void InterpreterVisitor::VisitWhileStmt(WhileStmt *stmt) {
     {
       auto cond = stmt->getCond();
       llvm::dbgs() << "while cond: " << cond->getStmtClassName() << '\n';
-      VisitStmt(cond);
-      if (mEnv->mReturned) {
-        mEnv->compoundStmtEnd();
-        return;
-      }
-      mEnv->evalStmt(cond);
+      Visit(cond);
       if (mEnv->mReturned) {
         mEnv->compoundStmtEnd();
         return;
@@ -140,12 +132,7 @@ void InterpreterVisitor::VisitWhileStmt(WhileStmt *stmt) {
 
     if (Stmt *body = stmt->getBody()) {
       llvm::dbgs() << "while body: " << body->getStmtClassName() << '\n';
-      VisitStmt(body);
-      if (mEnv->mReturned) {
-        mEnv->compoundStmtEnd();
-        return;
-      }
-      mEnv->evalStmt(body);
+      Visit(body);
       if (mEnv->mReturned) {
         mEnv->compoundStmtEnd();
         return;
@@ -162,21 +149,16 @@ void InterpreterVisitor::VisitForStmt(ForStmt *stmt) {
   mEnv->AddScopeBeforeCompoundStmt();
   if (Stmt *s = stmt->getInit()) {
     llvm::dbgs() << "for init: " << s->getStmtClassName() << '\n';
-    VisitStmt(s);
+    Visit(s);
     if (mEnv->mReturned) {
       mEnv->compoundStmtEnd();
       return;
     }
-    mEnv->evalStmt(s);
   }
   while (!mEnv->mReturned) {
     if (Stmt *condS = (stmt->getCond())) {
       llvm::dbgs() << "for cond: " << condS->getStmtClassName() << '\n';
-      VisitStmt(condS);
-      if (mEnv->mReturned) {
-        break;
-      }
-      mEnv->evalStmt(condS);
+      Visit(condS);
       if (mEnv->mReturned) {
         break;
       }
@@ -187,22 +169,14 @@ void InterpreterVisitor::VisitForStmt(ForStmt *stmt) {
     }
     if (Stmt *body = stmt->getBody()) {
       llvm::dbgs() << "for body: " << body->getStmtClassName() << '\n';
-      VisitStmt(body);
-      if (mEnv->mReturned) {
-        break;
-      }
-      mEnv->evalStmt(body);
+      Visit(body);
       if (mEnv->mReturned) {
         break;
       }
     }
     if (Stmt *inc = stmt->getInc()) {
       llvm::dbgs() << "for inc: " << inc->getStmtClassName() << '\n';
-      VisitStmt(inc);
-      if (mEnv->mReturned) {
-        break;
-      }
-      mEnv->evalStmt(inc);
+      Visit(inc);
       if (mEnv->mReturned) {
         break;
       }

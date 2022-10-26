@@ -4,6 +4,7 @@ project(assign1)
 find_package(Clang REQUIRED CONFIG HINTS ${LLVM_DIR} ${LLVM_DIR}/lib/cmake/clang NO_DEFAULT_PATH)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 17)
 
 file(GLOB SOURCE "./*.cpp")
 add_library(ast-interpreter-lib ${SOURCE})

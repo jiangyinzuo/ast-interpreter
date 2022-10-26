@@ -52,7 +52,7 @@ private:
 
   /// The current stmt
   Stmt *mPC;
-  int mFatherID, mID;
+  int mFatherID;
 
 public:
   StackFrame(int fatherID)
@@ -112,7 +112,6 @@ public:
 
   FunctionDecl *getEntry() { return mEntry; }
 
-  void evalStmt(Stmt *stmt);
   void intLiteral(IntegerLiteral *int_lit);
   void charLiteral(CharacterLiteral *char_lit);
 

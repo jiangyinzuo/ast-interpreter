@@ -95,6 +95,13 @@ ObjectV2 ObjectV2::Le(const ObjectV2 &obj) const {
   return ObjectV2(0, 0, RValue() <= obj.RValue());
 }
 
+ObjectV2 ObjectV2::Eq(const ObjectV2 &obj) const {
+  if (pointerType > 0 || obj.pointerType > 0) {
+    llvm::errs() << "invalid eq\n";
+    exit(-1);
+  }
+  return ObjectV2(0, 0, RValue() == obj.RValue());
+}
 ObjectV2 ObjectV2::Deref() const {
   if (pointerType == 0) {
     llvm::errs() << "invalid deref\n";

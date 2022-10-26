@@ -34,6 +34,12 @@ StackFrame::~StackFrame() {
 void StackFrame::bindDecl(Decl *decl, ObjectV2 val) { mVars[decl] = (val); }
 
 ObjectV2 StackFrame::getDeclValRef(std::deque<StackFrame> &stack, Decl *name) {
+#ifndef NDEBUG
+  std::deque<int> stackIDs;
+  stackIDs.push_back(stack.size() - 1);
+#endif
+  llvm::dbgs() << "ID=" << name->getID()
+               << "kindname= " << name->getDeclKindName() << '\n';
   auto *curFrame = this;
   for (;;) {
     auto result = curFrame->mVars.find(name);
@@ -41,9 +47,18 @@ ObjectV2 StackFrame::getDeclValRef(std::deque<StackFrame> &stack, Decl *name) {
       return result->second.LValueRef();
     }
     if (curFrame->mFatherID == kNoFather) {
-      llvm::errs() << "no decl";
+      llvm::errs() << "no decl " << name->getDeclKindName() << '\n';
+#ifndef NDEBUG
+      for (int id : stackIDs) {
+        llvm::errs() << id << ' ';
+      }
+      llvm::errs() << "ID=" << name->getID() << '\n';
+#endif
       exit(-1);
     }
+#ifndef NDEBUG
+    stackIDs.push_back(curFrame->mFatherID);
+#endif
     curFrame = &stack[curFrame->mFatherID];
   }
 }
@@ -71,9 +86,8 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
           mainStackFrame.bindDecl(
               *it, ObjectV2(pointerType, 0, 0L)); // TODO: decl value
         }
-      } else {
-        // user defined function
       }
+      // skip user defined function
     } else if (VarDecl *vardecl = dyn_cast<VarDecl>(*i)) {
       Expr *init_expr = vardecl->getInit();
       QualType tp = vardecl->getType();
@@ -108,42 +122,6 @@ void Environment::init(TranslationUnitDecl *unit, InterpreterVisitor *visitor) {
     }
   }
   mStack.push_back(std::move(mainStackFrame));
-}
-
-void Environment::evalStmt(Stmt *stmt) {
-  if (auto e = dyn_cast<IntegerLiteral>(stmt)) {
-    intLiteral(e);
-  } else if (auto e = dyn_cast<CharacterLiteral>(stmt)) {
-    charLiteral(e);
-  } else if (auto e = dyn_cast<BinaryOperator>(stmt)) {
-    binop(e);
-  } else if (auto e = dyn_cast<UnaryOperator>(stmt)) {
-    unary(e);
-  } else if (auto e = dyn_cast<UnaryExprOrTypeTraitExpr>(stmt)) {
-    unaryOrTypeTrait(e);
-  } else if (auto e = dyn_cast<DeclStmt>(stmt)) {
-    decl(e);
-  } else if (auto e = dyn_cast<DeclRefExpr>(stmt)) {
-    declref(e);
-  } else if (auto e = dyn_cast<ParenExpr>(stmt)) {
-    paren(e);
-  } else if (auto e = dyn_cast<CallExpr>(stmt)) {
-    call(e);
-  } else if (auto e = dyn_cast<ImplicitCastExpr>(stmt)) {
-    implicitCast(e);
-  } else if (auto e = dyn_cast<CastExpr>(stmt)) {
-    cast(e);
-  } else if (auto e = dyn_cast<ArraySubscriptExpr>(stmt)) {
-    arraySubscript(e);
-  } else if (auto e = dyn_cast<CompoundStmt>(stmt)) {
-    compoundStmtBegin(e);
-    compoundStmtEnd();
-  } else if (auto e = dyn_cast<ReturnStmt>(stmt)) {
-    returnStmt(e);
-  } else {
-    llvm::errs() << "unimplemented eval stmt!\n";
-    exit(-1);
-  }
 }
 
 void Environment::intLiteral(IntegerLiteral *int_lit) {
@@ -202,6 +180,10 @@ void Environment::binop(BinaryOperator *bop) {
   }
   case clang::BO_LT: {
     mStack.back().bindStmt(bop, left_value.Lt(right_value));
+    break;
+  }
+  case clang::BO_EQ: {
+    mStack.back().bindStmt(bop, left_value.Eq(right_value));
     break;
   }
   default: {
@@ -328,7 +310,15 @@ void Environment::call(CallExpr *callexpr) {
   } else if (callee == mOutput) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
+#ifndef NDEBUG
+    llvm::errs().enable_colors(true);
+    llvm::errs().changeColor(llvm::raw_ostream::Colors::GREEN, true, false);
+#endif
     llvm::errs() << val.RValue();
+#ifndef NDEBUG
+    llvm::errs().resetColor();
+    llvm::errs().enable_colors(false);
+#endif
   } else if (callee == mMalloc) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
@@ -345,6 +335,8 @@ void Environment::call(CallExpr *callexpr) {
     int res = mHeap.erase(ptr);
     assert(res == 1);
   } else {
+    callee = callee->getDefinition();
+    assert(callee->getDefinition() == callee);
     //  call user-defined function
     if (callee->getNumParams() != callexpr->getNumArgs()) {
       llvm::errs() << "expected " << callee->getNumParams() << "args, actual "
@@ -363,6 +355,7 @@ void Environment::call(CallExpr *callexpr) {
       unsigned pointerType = getPointerType((*arg)->getType());
       ObjectV2 v = val.ToRValue();
       stack_frame.bindDecl(*param, v);
+      llvm::dbgs() << "ID=" << (*param)->getID() << ", ";
       llvm::dbgs() << v.ToString() << ", ";
     }
     mStack.push_back(std::move(stack_frame));
