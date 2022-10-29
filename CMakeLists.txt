@@ -35,6 +35,9 @@ target_link_libraries(ast-interpreter ast-interpreter-lib)
 install(TARGETS ast-interpreter
   RUNTIME DESTINATION bin)
 
-if (${CMAKE_BUILD_TYPE} MATCHES "Debug")
+set (BUILD_UNITTEST OFF)
+
+if (${BUILD_UNITTEST} MATCHES ON)
+  message("build unittest")
   add_subdirectory(unittest)
 endif()

@@ -18,8 +18,7 @@ int a = 1;
 void printGlobal() {
 	PRINT(a);
 }
-int main(int argc, char**argv) {
-	PRINT(argc);
+int main() {
 	PRINT(a);
 	int a = 2;
 	PRINT(a);

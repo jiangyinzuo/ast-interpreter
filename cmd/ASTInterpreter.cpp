@@ -26,7 +26,7 @@ public:
     mVisitor.VisitStmt(entry->getBody());
     auto regRet = mEnv.getMainRet();
     if (regRet != 0) {
-      llvm::dbgs() << "main returns " << regRet << "\n";
+      // llvm::dbgs() << "main returns " << regRet << "\n";
     }
   }
 

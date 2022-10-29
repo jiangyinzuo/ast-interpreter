@@ -23,7 +23,7 @@ static unsigned getPointerType(QualType ty) {
 
 StackFrame::~StackFrame() {
   if (!mArrs.empty()) {
-    llvm::dbgs() << "destroy stack frame's " << mArrs.size() << " arrays\n";
+    // llvm::dbgs() << "destroy stack frame's " << mArrs.size() << " arrays\n";
     for (long *p : mArrs) {
       delete[] p;
     }
@@ -38,8 +38,8 @@ ObjectV2 StackFrame::getDeclValRef(std::deque<StackFrame> &stack, Decl *name) {
   std::deque<int> stackIDs;
   stackIDs.push_back(stack.size() - 1);
 #endif
-  llvm::dbgs() << "ID=" << name->getID()
-               << "kindname= " << name->getDeclKindName() << '\n';
+  // llvm::dbgs() << "ID=" << name->getID()
+  //             << "kindname= " << name->getDeclKindName() << '\n';
   auto *curFrame = this;
   for (;;) {
     auto result = curFrame->mVars.find(name);
@@ -138,7 +138,7 @@ void Environment::charLiteral(CharacterLiteral *char_lit) {
 }
 
 void Environment::binop(BinaryOperator *bop) {
-  llvm::dbgs() << "bop: " << bop->getOpcodeStr() << '\n';
+  // llvm::dbgs() << "bop: " << bop->getOpcodeStr() << '\n';
   mStack.back().setPC(bop);
   Expr *left = bop->getLHS();
   Expr *right = bop->getRHS();
@@ -280,7 +280,7 @@ void Environment::declref(DeclRefExpr *declref) {
   if (declrefType->isIntegerType() || declrefType->isCharType() ||
       declrefType->isArrayType() || declrefType->isFunctionType() ||
       declrefType->isPointerType()) {
-    llvm::dbgs() << declref->getDecl()->getDeclName().getAsString() << '\n';
+    // llvm::dbgs() << declref->getDecl()->getDeclName().getAsString() << '\n';
     Decl *decl = declref->getFoundDecl();
     auto val = mStack.back().getDeclValRef(mStack, decl);
     mStack.back().bindStmt(declref, val);
@@ -310,15 +310,15 @@ void Environment::call(CallExpr *callexpr) {
   } else if (callee == mOutput) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
-#ifndef NDEBUG
-    llvm::errs().enable_colors(true);
-    llvm::errs().changeColor(llvm::raw_ostream::Colors::GREEN, true, false);
-#endif
+// #ifndef NDEBUG
+//     llvm::errs().enable_colors(true);
+//     llvm::errs().changeColor(llvm::raw_ostream::Colors::GREEN, true, false);
+// #endif
     llvm::errs() << val.RValue();
-#ifndef NDEBUG
-    llvm::errs().resetColor();
-    llvm::errs().enable_colors(false);
-#endif
+// #ifndef NDEBUG
+//     llvm::errs().resetColor();
+//     llvm::errs().enable_colors(false);
+// #endif
   } else if (callee == mMalloc) {
     Expr *decl = callexpr->getArg(0);
     auto val = mStack.back().getStmtVal(decl);
@@ -347,7 +347,7 @@ void Environment::call(CallExpr *callexpr) {
     StackFrame stack_frame(0);
     CallExpr::arg_iterator arg;
     FunctionDecl::param_iterator param;
-    llvm::dbgs() << "param: ";
+    // llvm::dbgs() << "param: ";
     for (arg = callexpr->arg_begin(), param = callee->param_begin();
          arg != callexpr->arg_end() && param != callee->param_end();
          ++arg, ++param) {
@@ -355,18 +355,18 @@ void Environment::call(CallExpr *callexpr) {
       unsigned pointerType = getPointerType((*arg)->getType());
       ObjectV2 v = val.ToRValue();
       stack_frame.bindDecl(*param, v);
-      llvm::dbgs() << "ID=" << (*param)->getID() << ", ";
-      llvm::dbgs() << v.ToString() << ", ";
+      // llvm::dbgs() << "ID=" << (*param)->getID() << ", ";
+      // llvm::dbgs() << v.ToString() << ", ";
     }
     mStack.push_back(std::move(stack_frame));
-    llvm::dbgs() << "call begin " << callee->getName() << mStack.size()
-                 << "{\n";
+    // llvm::dbgs() << "call begin " << callee->getName() << mStack.size()
+    //             << "{\n";
     mVisitor->VisitStmt(callee->getBody());
     mReturned = false;
-    llvm::dbgs() << "call end" << callee->getName() << mStack.size() << "}\n";
+    // llvm::dbgs() << "call end" << callee->getName() << mStack.size() << "}\n";
     // resume PC
     assert(mRetReg.IsRValue());
-    llvm::dbgs() << "ret: " << mRetReg.ToString() << '\n';
+    // llvm::dbgs() << "ret: " << mRetReg.ToString() << '\n';
     mStack.pop_back();
     mStack.back().bindStmt(callexpr, mRetReg);
   }
@@ -398,22 +398,22 @@ void Environment::arraySubscript(ArraySubscriptExpr *arrSubExpr) {
 
 void Environment::compoundStmtBegin(CompoundStmt *stmt) {
   mStack.back().setPC(stmt);
-  llvm::dbgs() << "\n{\n";
+  // llvm::dbgs() << "\n{\n";
   mStack.emplace_back((mStack.size() - 1));
 }
 
 void Environment::compoundStmtEnd() {
-  llvm::dbgs() << "\n}\n";
+  // llvm::dbgs() << "\n}\n";
   mStack.pop_back();
 }
 
 void Environment::returnStmt(ReturnStmt *stmt) {
   mStack.back().setPC(stmt);
-  llvm::dbgs() << "return stmt, ";
+  // llvm::dbgs() << "return stmt, ";
   Expr *e = stmt->getRetValue();
   if (e != nullptr) {
     mRetReg = mStack.back().getStmtVal(e).ToRValue();
-    llvm::dbgs() << "ret value: " << mRetReg.ToString() << '\n';
+    // llvm::dbgs() << "ret value: " << mRetReg.ToString() << '\n';
   }
   mReturned = true;
 }
@@ -435,6 +435,6 @@ void Environment::arrayType(VarDecl *vardecl, Expr *init_expr,
 }
 
 void Environment::AddScopeBeforeCompoundStmt() {
-  llvm::dbgs() << "{\n";
+  // llvm::dbgs() << "{\n";
   mStack.emplace_back(mStack.size() - 1);
 }
